@@ -1,0 +1,2 @@
+rootProject.name = 'JDVideoPlayer'
+include ':app'
