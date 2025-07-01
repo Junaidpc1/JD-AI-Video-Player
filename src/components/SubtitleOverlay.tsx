@@ -2,46 +2,63 @@ import React, { useEffect, useState } from 'react';
 import { Text, View, StyleSheet } from 'react-native';
 import { generateSubtitlesOffline } from '../services/SubtitleBridge';
 import { parseSRT, SubtitleLine } from '../utils/parseSRT';
-import Video from 'react-native-video';
+import { usePlayer } from '../context/PlayerContext';
 
 interface Props {
   videoPath: string;
+  currentTime: number;
 }
 
-const SubtitleOverlay: React.FC<Props> = ({ videoPath }) => {
+const SubtitleOverlay: React.FC<Props> = ({ videoPath, currentTime }) => {
   const [lines, setLines] = useState<SubtitleLine[]>([]);
-  const [currentTime, setCurrentTime] = useState(0);
   const [currentLine, setCurrentLine] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const { aiSubtitlesEnabled } = usePlayer();
 
   useEffect(() => {
-    (async () => {
-      const srt = await generateSubtitlesOffline(videoPath);
-      const parsed = parseSRT(srt);
-      setLines(parsed);
-    })();
-  }, [videoPath]);
+    if (!aiSubtitlesEnabled) {
+      setLoading(false);
+      return;
+    }
+
+    const loadSubtitles = async () => {
+      try {
+        setLoading(true);
+        const srt = await generateSubtitlesOffline(videoPath);
+        const parsed = parseSRT(srt);
+        setLines(parsed);
+      } catch (error) {
+        console.error('Failed to load subtitles:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSubtitles();
+  }, [videoPath, aiSubtitlesEnabled]);
 
   useEffect(() => {
+    if (!aiSubtitlesEnabled || lines.length === 0) {
+      setCurrentLine('');
+      return;
+    }
+
     const matched = lines.find(line => currentTime >= line.start && currentTime <= line.end);
     setCurrentLine(matched?.text || '');
-  }, [currentTime, lines]);
+  }, [currentTime, lines, aiSubtitlesEnabled]);
+
+  if (!aiSubtitlesEnabled) return null;
 
   return (
-    <>
-      <Video
-        source={{ uri: videoPath }}
-        style={{ height: 0, width: 0 }} // Hidden dummy player just to get time
-        onProgress={({ currentTime }) => setCurrentTime(currentTime)}
-        paused={true}
-      />
-      <View style={styles.overlay}>
-        <Text style={styles.text}>{currentLine || '⏳ Generating subtitles...'}</Text>
-      </View>
-    </>
+    <View style={styles.overlay}>
+      {loading ? (
+        <Text style={styles.text}>⏳ Generating subtitles...</Text>
+      ) : currentLine ? (
+        <Text style={styles.text}>{currentLine}</Text>
+      ) : null}
+    </View>
   );
 };
-
-export default SubtitleOverlay;
 
 const styles = StyleSheet.create({
   overlay: {
@@ -55,8 +72,11 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     backgroundColor: 'rgba(0,0,0,0.7)',
-    padding: 6,
+    padding: 8,
     borderRadius: 6,
     textAlign: 'center',
+    fontWeight: '500',
   },
 });
+
+export default SubtitleOverlay;
